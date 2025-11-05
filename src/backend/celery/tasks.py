@@ -27,7 +27,7 @@ def check_complaint_by_id(self, complaint_id: str):
 async def _check_complaint_by_id(self, complaint_id: str):
     import httpx
 
-    url = f"http://localhost:8000/complaints/check_by_id/{complaint_id}"
+    url = f"{settings.API_BASE_URL}/complaints/check_by_id/{complaint_id}"
     max_retries = settings.CELERY_TASK_MAX_RETRIES
     retry_delay = settings.CELERY_TASK_RETRY_DELAY
 
@@ -56,7 +56,7 @@ def check_complaint_by_order(self, order_id: str):
 async def _check_complaint_by_order(self, order_id: str):
     import httpx
 
-    url = f"http://localhost:8000/complaints/check_by_order/{order_id}"
+    url = f"{settings.API_BASE_URL}/complaints/check_by_order/{order_id}"
     max_retries = settings.CELERY_TASK_MAX_RETRIES
     retry_delay = settings.CELERY_TASK_RETRY_DELAY
 
@@ -85,7 +85,7 @@ def create_complaint(self, complaint_id: str, order_id: str, issue: str):
 async def _create_complaint(self, complaint_id: str, order_id: str, issue: str):
     import httpx
 
-    url = "http://localhost:8000/complaints"
+    url = f"{settings.API_BASE_URL}/complaints"
     payload = {
         "id": complaint_id,
         "order_id": order_id,
@@ -127,7 +127,7 @@ def get_complaint_details(self, complaint_id: str):
 async def _get_complaint_details(self, complaint_id: str):
     import httpx
 
-    url = f"http://localhost:8000/complaints/{complaint_id}"
+    url = f"{settings.API_BASE_URL}/complaints/{complaint_id}"
     max_retries = settings.CELERY_TASK_MAX_RETRIES
     retry_delay = settings.CELERY_TASK_RETRY_DELAY
 
@@ -168,7 +168,7 @@ def get_order_status(self, order_id: str):
 async def _get_order_status(self, order_id: str):
     import httpx
 
-    url = f"http://localhost:8000/orders/{order_id}"
+    url = f"{settings.API_BASE_URL}/orders/{order_id}"
     max_retries = settings.CELERY_TASK_MAX_RETRIES
     retry_delay = settings.CELERY_TASK_RETRY_DELAY
 
@@ -209,7 +209,7 @@ def escalate_complaint(self, complaint_id: str):
 async def _escalate_complaint(self, complaint_id: str):
     import httpx
 
-    url = "http://localhost:8000/escalations"
+    url = f"{settings.API_BASE_URL}/escalations"
     payload = {"complaint_id": complaint_id}
     max_retries = settings.CELERY_TASK_MAX_RETRIES
     retry_delay = settings.CELERY_TASK_RETRY_DELAY

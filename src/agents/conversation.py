@@ -38,7 +38,13 @@ from langgraph.checkpoint.memory import InMemorySaver
 from typing import Optional,Annotated
 from langchain.agents.middleware import PIIMiddleware
 
-# Import Celery tasks
+# Always use localhost to connect to Docker containers exposed ports
+API_BASE_URL = os.getenv("API_BASE_URL")
+print(f"🔧 API Base URL: {API_BASE_URL}")
+
+# Import Celery tasks - Always use Celery to connect to Docker containers
+CELERY_AVAILABLE = False
+
 try:
     from backend.celery.tasks import (
         check_complaint_by_id,
@@ -49,8 +55,10 @@ try:
         escalate_complaint as escalate_complaint_task
     )
     CELERY_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠️ Warning: Celery tasks not available: {e}")
+    print("✅ Celery tasks loaded successfully")
+except Exception as e:
+    print(f"⚠️ Celery tasks not available: {e}")
+    print("ℹ️ Make sure Docker containers are running: docker compose up -d")
     CELERY_AVAILABLE = False
 
 # === Environment Setup ===
@@ -83,23 +91,39 @@ class Context:
 # === Tools ===
 """Answer general store-related questions using the FAQ system."""
 vector_store = InMemoryVectorStore(embeddings)
+_vector_store_initialized = False
 
-loader = CSVLoader(file_path = FAQ_DATA_PATH)
-docs = loader.load()
+def initialize_vector_store():
+    """Lazy load the vector store to avoid quota issues at startup."""
+    global _vector_store_initialized
+    if _vector_store_initialized:
+        return
+    
+    try:
+        loader = CSVLoader(file_path = FAQ_DATA_PATH)
+        docs = loader.load()
 
-text_splitter = RecursiveCharacterTextSplitter(
-chunk_size=500,  # chunk size (characters)
-chunk_overlap=200,  # chunk overlap (characters)
-add_start_index=True,  # track index in original document
-)
-all_splits = text_splitter.split_documents(docs)
-
-document_ids = vector_store.add_documents(documents=all_splits)
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,  # chunk size (characters)
+            chunk_overlap=200,  # chunk overlap (characters)
+            add_start_index=True,  # track index in original document
+        )
+        all_splits = text_splitter.split_documents(docs)
+        document_ids = vector_store.add_documents(documents=all_splits)
+        _vector_store_initialized = True
+        print(f"✅ Vector store initialized with {len(document_ids)} document chunks")
+    except Exception as e:
+        print(f"⚠️ Warning: Could not initialize vector store (FAQ system disabled): {e}")
+        # Don't raise - allow the agent to work without FAQ system
 
 @tool(response_format="content_and_artifact")
 @traceable
 def retrieve_context(query: str):
     """Retrieve information to help answer a query."""
+    initialize_vector_store()  # Ensure vector store is loaded
+    if not _vector_store_initialized:
+        return "FAQ system is temporarily unavailable. Please ask specific questions about orders or complaints.", []
+    
     retrieved_docs = vector_store.similarity_search(query, k=2)
     serialized = "\n\n".join(
         (f"Source: {doc.metadata}\nContent: {doc.page_content}")
@@ -162,7 +186,7 @@ def complaint(runtime: ToolRuntime[Context]) -> str:
                    "order_id": ctx.order_id, 
                    "issue": ctx.complaint_reason}
         try:
-            response = requests.post("http://localhost:8000/complaints", json=payload, timeout=5)
+            response = requests.post(f"{API_BASE_URL}/complaints", json=payload, timeout=5)
             if response.status_code == 200:
                 return f"✅ Complaint submitted successfully (ID: {ctx.complaint_id})."
             return f"❌ Failed to submit complaint: {response.status_code}"
@@ -195,7 +219,7 @@ def check_complaint_status(runtime: ToolRuntime[Context]) -> str:
     else:
         # Fallback to direct API call
         try:
-            url = f"http://localhost:8000/complaints/check_by_id/{ctx.complaint_id}"
+            url = f"{API_BASE_URL}/complaints/check_by_id/{ctx.complaint_id}"
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
                 return f"📝 Complaint Details: {response.json()}"
@@ -232,13 +256,17 @@ def order_track(runtime: ToolRuntime[Context]) -> str:
     else:
         # Fallback to direct API call
         try:
-            url = f"http://localhost:8000/orders/{ctx.order_id}"
+            url = f"{API_BASE_URL}/orders/{ctx.order_id}"
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
-                return f"📦 Order Status: {response.json()}"
-            return f"Order not found (Status: {response.status_code})"
+                data = response.json()
+                return f"📦 **Order Status:**\n" \
+                       f"Order ID: {data['order_id']}\n" \
+                       f"Status: {data['status']}\n" \
+                       f"Estimated Delivery: {data['estimated_delivery']}"
+            return f"❌ Order not found (Status: {response.status_code})"
         except Exception as e:
-            return f"Error connecting to tracking system: {e}"
+            return f"⚠️ Error connecting to tracking system: {e}"
 
 
 @tool
@@ -272,7 +300,7 @@ def escalate(runtime: ToolRuntime[Context]) -> str:
         # Fallback to direct API call
         payload = {"complaint_id": ctx.complaint_id}
         try:
-            response = requests.post("http://localhost:8000/escalations", json=payload, timeout=5)
+            response = requests.post(f"{API_BASE_URL}/escalations", json=payload, timeout=5)
             
             if response.status_code == 200:
                 result = response.json()

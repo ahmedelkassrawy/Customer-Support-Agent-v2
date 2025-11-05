@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     
     FAQ_DATA_PATH: str = "src/data/store_qa.csv"
     DATABASE_URL: str = "sqlite:///./customer_service.db"
+    API_BASE_URL: str = "http://localhost:8000"  # Default for local dev, override for Docker
 
     CELERY_BROKER_URL: str
     CELERY_RESULT_BACKEND: str
