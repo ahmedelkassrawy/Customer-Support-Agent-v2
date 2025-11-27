@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy import select
 import sys
 from pathlib import Path
+import uvicorn
 
 # Add root directory to path so we can import config
 root_dir = Path(__file__).parent.parent.parent
@@ -20,7 +21,6 @@ from memory.base import Base, async_engine, sync_engine
 from memory.complaints import Complaint 
 from memory.order import Order 
 from memory.escalation import Escalation 
-import uvicorn
 
 # Create tables using sync engine
 Base.metadata.create_all(bind=sync_engine)
@@ -37,6 +37,7 @@ async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
 
+# Create FastAPI app
 app = FastAPI(title="Customer Service API")
 
 class ComplaintCreate(BaseModel):
@@ -171,9 +172,6 @@ async def get_complaint(complaint_id: str, db: AsyncSession = Depends(get_db)):
         "escalation_status": complaint.escalation_status
     }
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
 @app.get("/complaints/check_by_order/{order_id}")
 async def check_complaint_by_order(order_id: str, db: AsyncSession = Depends(get_db)):
     """Check if a complaint exists for a given order ID"""
@@ -209,3 +207,6 @@ async def check_complaint_by_id(complaint_id: str, db: AsyncSession = Depends(ge
         return {
             "exists": False
         }
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -4,6 +4,8 @@ import uuid
 import requests
 import warnings
 from pathlib import Path
+from redisvl.extensions.cache.llm import SemanticCache
+from redisvl.utils.vectorize import HFTextVectorizer
 
 # Suppress specific warnings
 warnings.filterwarnings("ignore", category=FutureWarning, message=".*pynvml.*")
@@ -37,6 +39,15 @@ from langchain.agents.middleware import SummarizationMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 from typing import Optional,Annotated
 from langchain.agents.middleware import PIIMiddleware
+from langfuse.langchain import CallbackHandler
+from langfuse import get_client
+from langfuse.langchain import CallbackHandler
+from langchain.agents import create_agent
+import pandas as pd
+from langchain_huggingface import HuggingFaceEmbeddings
+ 
+langfuse_handler = CallbackHandler()
+langfuse = get_client()
 
 # Always use localhost to connect to Docker containers exposed ports
 API_BASE_URL = os.getenv("API_BASE_URL")
@@ -76,8 +87,9 @@ checkpointer = InMemorySaver()
 store = InMemoryStore()
 settings = get_settings()
 llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=settings.GOOGLE_API_KEY)
-embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001",
-                                          google_api_key=settings.GOOGLE_API_KEY)
+# embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001",
+#                                           google_api_key=settings.GOOGLE_API_KEY)
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
 
 # === Context ===
 @dataclass
@@ -268,7 +280,6 @@ def order_track(runtime: ToolRuntime[Context]) -> str:
         except Exception as e:
             return f"⚠️ Error connecting to tracking system: {e}"
 
-
 @tool
 @traceable
 def escalate(runtime: ToolRuntime[Context]) -> str:
@@ -320,29 +331,24 @@ def escalate(runtime: ToolRuntime[Context]) -> str:
             return f"⚠️ Error during escalation: {str(e)}. Complaint ID: {ctx.complaint_id}"
 
 
-
-
 # === System Prompt ===
 sys_prompt = """You are a helpful **Customer Service Agent** for our store.
 
 You have access to a tool that retrieves context from a blog post. Use the tool to help answer user queries.
 
 **IMPORTANT INSTRUCTIONS:**
-1. For general questions about the store (hours, policies, products, payments, discounts, etc.), ALWAYS use the **faq** tool first.
-2. For document-specific questions (user uploads their own PDF/CSV/TXT), use the **rag** tool.
-3. For order tracking, use **order_track**.
-4. For complaints, use **complaint**.
-5. For escalations, use **escalate**.
-6. For conversation summary, use **summarizer**.
+2. For general questions about the store (hours, policies, products, payments, discounts, etc.), Always call `retrieve_context`."
+4. For order tracking, use **order_track**.
+5. For complaints, use **complaint**.
+6. For escalations, use **escalate**.
+7. For conversation summary, use **summarizer**.
 
 **When a user asks a question, analyze it and use the appropriate tool immediately.**
 
 Always provide clear, helpful, and friendly responses based on the tool's output.
 """
 
-
 # === Agent Creation ===
-from langchain.agents import create_agent
 
 agent = create_agent(
     model=llm,
@@ -384,7 +390,8 @@ def run_customer_agent():
                 print("👋 Goodbye!")
                 break
 
-            config = {"configurable": {"thread_id": thread_id}}
+            config = {"configurable": {"thread_id": thread_id},
+                      "callbacks": [langfuse_handler]}
             response = agent.invoke(
                 {
                     "messages": [
