@@ -82,7 +82,6 @@ else:
     # Relative to project root (parent of parent of this file)
     FAQ_DATA_PATH = str(Path(__file__).parent.parent.parent / FAQ_DATA_PATH_RAW)
 
-checkpointer = MemorySaver()
 checkpointer = InMemorySaver()
 store = InMemoryStore()
 settings = get_settings()
